@@ -175,7 +175,7 @@ bot.on("message", (ctx) => {
         place = null;
     }
 });
-const job = new CronJob('7 * * * *', () => {
+const job = new CronJob('30 23 * * *', () => {
     bot.telegram.sendMessage(process.env.ME_ID!, 'Шо ти як? Де сьогодні був?', {
         reply_markup: {
             inline_keyboard: [
