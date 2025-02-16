@@ -1,8 +1,7 @@
 export interface Data {
-    stakes:      { [key: string]: Stake };
-    prepayments: number[];
-    payments:    any[];
-    sales:       Sale[];
+    stakes:   { [key: string]: Stake };
+    payments: number[];
+    sales:    Sale[];
 }
 
 export interface Sale {
@@ -11,8 +10,7 @@ export interface Sale {
     sales: number;
 }
 
-export type Place =  "Воробкевича" | "Проспект" | "Шептицького";
-
+export type Place = "Воробкевича" | "Проспект" |"Шептицького"
 
 export interface Stake {
     stake:   number;

@@ -1,13 +1,14 @@
-import { Telegraf } from 'telegraf';
+import { Context, Telegraf, type NarrowedContext } from 'telegraf';
 import { type Place, type Data } from './types';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import { CronJob } from 'cron';
+import type { Update, CallbackQuery } from 'telegraf/types';
 
 
 let data: Data;
 readData();
-let waitingForMessage: "PREPAYMENT" | "PAYMENT" | `SALES@${string}` | null = null;
+let waitingForMessage: "PAYMENT" | `SALES@${string}` | "ADD_DAY_DATE" | "ADD_DAY_PLACE" |null = null;
 let place: Place | null = null;
 
 dotenv.config();
@@ -47,15 +48,6 @@ bot.command(['summary'], (ctx) => {
     message += "-".repeat(longestRow) + "\n";
     message += `Всього: ${total.toFixed(2)}\n`;
 
-    let prepayments = 0
-    for (const prepayment of data.prepayments) {
-        total -= prepayment;
-        prepayments += prepayment;
-    }
-
-    message += "-".repeat(longestRow) + "\n";
-    message += `Аванс: ${prepayments.toFixed(0)}\n`;
-
     let payments = 0;
     for (const payment of data.payments) {
         total -= payment;
@@ -75,29 +67,65 @@ bot.command(['summary'], (ctx) => {
     ctx.reply(`${message}`, { parse_mode: 'Markdown' });
 });
 
-bot.command(['prepayment'], (ctx) => {
+bot.command('payment', (ctx) => { 
     if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
         ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
         return;
     }
 
-    waitingForMessage = "PREPAYMENT";
-    ctx.reply("Введіть суму авансу");
+    waitingForMessage = "PAYMENT";
+    ctx.reply("Шо тобі дали, старига?");
 });
 
-bot.command('prepayments', (ctx) => {
+bot.command('payments', (ctx) => {
     if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
         ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
         return;
     }
 
     let message = "`";
-    for (const prepayment of data.prepayments) {
-        message += `${prepayment.toFixed(2)}\n`;
+
+    for (const payment of data.payments) {
+        message += `${payment.toFixed(2)}\n`;
     }
+
     message += "`";
 
     ctx.reply(`${message}`, { parse_mode: 'Markdown' });
+});
+
+bot.command(['cancel'], (ctx) => {
+    if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
+        ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
+        return;
+    }
+
+    waitingForMessage = null;
+    place = null;
+    ctx.reply("Окей", {
+        reply_markup: {
+            remove_keyboard: true
+        }
+    });
+});
+
+bot.command('edit', (ctx) => { 
+    if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
+        ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
+        return;
+    }
+
+    ctx.reply("Шо нада?", {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Додати день', callback_data: 'EDIT_ADD_DAY' }],
+                [{ text: 'Видалити день', callback_data: 'EDIT_DELETE_DAY' }],
+                [{ text: 'Видалити виплату', callback_data: 'EDIT_DELETE_PAYMENT' }],
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    });
 });
 
 bot.on("message", (ctx) => {
@@ -112,25 +140,8 @@ bot.on("message", (ctx) => {
 
     const message = ctx.text;
 
-    if (waitingForMessage === "PREPAYMENT") {
-        if (!message) {
-            ctx.reply("Введіть суму авансу");
-            return;
-        }
-
-        const prepayment = parseFloat(message);
-
-        if (isNaN(prepayment) || prepayment < 1) {
-            ctx.reply("Це не число або число менше 1");
-            return;
-        }
-
-        data.prepayments.push(prepayment);
-        updateData();
-
-        ctx.reply("Аванс додано");
-        waitingForMessage = null;
-    } else if (waitingForMessage === "PAYMENT") {
+    
+    if (waitingForMessage === "PAYMENT") {
         if (!message) {
             ctx.reply("Введіть суму виплати");
             return;
@@ -150,7 +161,7 @@ bot.on("message", (ctx) => {
         waitingForMessage = null;
     } else if (waitingForMessage.startsWith("SALES@")) {
         if (!message) {
-            ctx.reply("Введіть суму продажу");
+            ctx.reply("Їблан?");
             return;
         }
 
@@ -168,14 +179,51 @@ bot.on("message", (ctx) => {
 
         const date = waitingForMessage.split('@')[1];
         data.sales.push({ date, sales: salesAmount, place: place! });
+        sortData();
         updateData();
 
         ctx.reply("Хрш, до завтра!");
         waitingForMessage = null;
         place = null;
+    } else if (waitingForMessage === "ADD_DAY_DATE") {
+        if (!message) {
+            ctx.reply("Введи даду в форматі дд/мм/рррр");
+            return;
+        }
+
+        const day = +message.split('/')[0];
+        const month = +message.split('/')[1];
+        const year = +message.split('/')[2];
+
+        if (isNaN(day) || isNaN(month) || isNaN(year)) {
+            ctx.reply("Їблан, норм дату введи");
+            return;
+        }
+
+        const date = new Date(year, month - 1, day).toLocaleString('en-GB', { timeZone: 'Europe/Kiev' }).split(',')[0];
+
+        if (date === 'Invalid Date') {
+            ctx.reply("Їблан, норм дату введи");
+            return;
+        }
+
+        waitingForMessage = `SALES@${date}`;
+
+        ctx.reply(`Їбашу для ${date}`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: 'Воробкевича', callback_data: 'VB' }],
+                    [{ text: 'Проспект', callback_data: 'PR' }],
+                    [{ text: 'Шептицького', callback_data: 'SH' }]
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true
+            }
+        })
     }
 });
-const job = new CronJob('30 23 * * *', () => {
+
+const job = new CronJob('0 23 * * *', () => {
     bot.telegram.sendMessage(process.env.ME_ID!, 'Шо ти як? Де сьогодні був?', {
         reply_markup: {
             inline_keyboard: [
@@ -218,13 +266,28 @@ bot.on('callback_query', (ctx) => {
     } else if (callbackData === 'DAY_OFF') {
         ctx.reply("Хрш, лінивець");
         ctx.deleteMessage();
+    } else if (callbackData.startsWith('EDIT_')) {
+        handleEditCallback(ctx, callbackData);
+    } else if (callbackData.startsWith('DELETE_DAY:')) {
+        const index = parseInt(callbackData.split(':')[1]);
+        data.sales.splice(index, 1);
+        updateData();
+        ctx.reply("Заїбісь, видалено");
+        ctx.deleteMessage();
+    } else if (callbackData.startsWith('DELETE_PAYMENT:')) {
+        const index = parseInt(callbackData.split(':')[1]);
+        data.payments.splice(index, 1);
+        updateData();
+        ctx.reply("Заїбісь, видалено");
+        ctx.deleteMessage();
+    } else {
+        ctx.reply(`Бля шось не то: callbackData: ${callbackData}`);
     }
 
     ctx.answerCbQuery();
 });
 
 job.start();
-
 bot.launch();
 
 process.once('SIGINT', () => {
@@ -244,3 +307,63 @@ function readData() {
 function updateData() {
     fs.writeFileSync('data.json', JSON.stringify(data, null, 4));
 }
+
+function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.CallbackQueryUpdate<CallbackQuery>>, callbackData: string) {
+    ctx.editMessageReplyMarkup(undefined);
+    switch (callbackData) {
+        case "EDIT_ADD_DAY": 
+            ctx.reply("Введіть дату", {
+                reply_markup: {
+                    remove_keyboard: true
+                }
+            });
+            waitingForMessage = "ADD_DAY_DATE";
+            break;
+
+
+        case "EDIT_DELETE_DAY":
+            if (data.sales.length === 0) {
+                ctx.reply("Немає днів для видалення");
+                return;
+            }
+
+            const keyboard = data.sales.map((sale, index) => {
+                return [{ text: `${sale.date} - ${sale.place}`, callback_data: `DELETE_DAY:${index}` }];
+            });
+
+            ctx.reply("Виберіть день для видалення", {
+                reply_markup: {
+                    inline_keyboard: keyboard,
+                    resize_keyboard: true,
+                    one_time_keyboard: true
+                }
+            });
+            break;
+
+        case "EDIT_DELETE_PAYMENT":
+            if (data.payments.length === 0) {
+                ctx.reply("Немає виплат для видалення");
+                return;
+            }
+
+            const keyboard2 = data.payments.map((payment, index) => {
+                return [{ text: `${payment}`, callback_data: `DELETE_PAYMENT:${index}` }];
+            });
+
+            ctx.reply("Виберіть виплату для видалення", {
+                reply_markup: {
+                    inline_keyboard: keyboard2,
+                    resize_keyboard: true,
+                    one_time_keyboard: true
+                }
+            });
+            break
+          
+    }
+
+    ctx.answerCbQuery();   
+}
+function sortData() {
+    data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
+}
+
