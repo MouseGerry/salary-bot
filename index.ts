@@ -8,7 +8,7 @@ import type { Update, CallbackQuery } from 'telegraf/types';
 
 let data: Data;
 readData();
-let waitingForMessage: "PAYMENT" | `SALES@${string}` | "ADD_DAY_DATE" | "ADD_DAY_PLACE" |null = null;
+let waitingForMessage: "PAYMENT" | `SALES@${string}` | "ADD_DAY_DATE" | "ADD_DAY_PLACE" | null = null;
 let place: Place | null = null;
 
 dotenv.config();
@@ -67,7 +67,7 @@ bot.command(['summary'], (ctx) => {
     ctx.reply(`${message}`, { parse_mode: 'Markdown' });
 });
 
-bot.command('payment', (ctx) => { 
+bot.command('payment', (ctx) => {
     if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
         ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
         return;
@@ -109,7 +109,7 @@ bot.command(['cancel'], (ctx) => {
     });
 });
 
-bot.command('edit', (ctx) => { 
+bot.command('edit', (ctx) => {
     if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
         ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
         return;
@@ -140,7 +140,7 @@ bot.on("message", (ctx) => {
 
     const message = ctx.text;
 
-    
+
     if (waitingForMessage === "PAYMENT") {
         if (!message) {
             ctx.reply("Введіть суму виплати");
@@ -284,7 +284,7 @@ bot.on('callback_query', (ctx) => {
         ctx.reply(`Бля шось не то: callbackData: ${callbackData}`);
     }
 
-    ctx.answerCbQuery();
+    bot.telegram.answerCbQuery(ctx.callbackQuery.id);
 });
 
 job.start();
@@ -311,7 +311,7 @@ function updateData() {
 function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.CallbackQueryUpdate<CallbackQuery>>, callbackData: string) {
     ctx.editMessageReplyMarkup(undefined);
     switch (callbackData) {
-        case "EDIT_ADD_DAY": 
+        case "EDIT_ADD_DAY":
             ctx.reply("Введіть дату", {
                 reply_markup: {
                     remove_keyboard: true
@@ -358,10 +358,10 @@ function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.Callbac
                 }
             });
             break
-          
+
     }
 
-    ctx.answerCbQuery();   
+    ctx.answerCbQuery();
 }
 function sortData() {
     data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
