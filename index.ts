@@ -47,7 +47,7 @@ bot.command(['summary'], (ctx) => {
     for (let i = 0; i < data.sales.length; i++) {
         const salary = data.sales[i].sales * data.stakes[data.sales[i].place].percent / 100 + data.stakes[data.sales[i].place].stake;
         total += salary;
-        message += `${data.sales[i].date}@${placeShort[data.sales[i].place]}} - ${salary.toFixed(2)}\n`;
+        message += `${data.sales[i].date}@${placeShort[data.sales[i].place]} - ${salary.toFixed(2)}\n`;
     }
 
     const longestRow = Math.max(...message.split('\n').map(row => row.length));
