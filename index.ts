@@ -4,7 +4,14 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import { CronJob } from 'cron';
 import type { Update, CallbackQuery } from 'telegraf/types';
+import { get } from 'http';
 
+
+const placeShort = {
+    "Воробкевича" : "ВБ",
+    "Проспект" : "ПР",
+    "Шептицького": "ШЕПТ"
+}
 
 let data: Data;
 readData();
@@ -40,7 +47,7 @@ bot.command(['summary'], (ctx) => {
     for (let i = 0; i < data.sales.length; i++) {
         const salary = data.sales[i].sales * data.stakes[data.sales[i].place].percent / 100 + data.stakes[data.sales[i].place].stake;
         total += salary;
-        message += `${data.sales[i].date} : ${sales[i].toFixed(2).padEnd(longestSales)} - ${salary.toFixed(2)}\n`;
+        message += `${data.sales[i].date}@${placeShort[data.sales[i].place]}} - ${salary.toFixed(2)}\n`;
     }
 
     const longestRow = Math.max(...message.split('\n').map(row => row.length));
@@ -363,7 +370,33 @@ function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.Callbac
 
     ctx.answerCbQuery();
 }
+
 function sortData() {
-    data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
+    data.sales = data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
 }
 
+function getInterval(from: Date, to?: Date) {
+    if (!to) {
+        to = new Date();
+    }
+    
+    console.log("yay")
+    return data.sales.filter(sale => {
+        const date = parseDate(sale.date)
+        return date.getTime() >= from.getTime() && date.getTime() <= to!.getTime();
+    });
+}
+
+
+function parseDate(str: string) {
+    const parts = str.split('/');
+    const day = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1; // Months are zero-based in JavaScript
+    const year = parseInt(parts[2]);
+
+    return new Date(year, month, day);
+} 
+
+getInterval(parseDate("01/01/2025"), parseDate("01/02/2025")).forEach(sale => {
+    console.log(`${sale.date} ${sale.place.padEnd(15)} ${sale.sales}`);
+})
