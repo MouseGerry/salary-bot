@@ -4,14 +4,16 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import { CronJob } from 'cron';
 import type { Update, CallbackQuery } from 'telegraf/types';
-import { get } from 'http';
 
 
+const MAX_MESSAGE_LENGHT = 4096;
 const placeShort = {
-    "Воробкевича" : "ВБ",
-    "Проспект" : "ПР",
+    "Воробкевича": "ВБ",
+    "Проспект": "ПР",
     "Шептицького": "ШЕПТ"
 }
+
+
 
 let data: Data;
 readData();
@@ -40,7 +42,6 @@ bot.command(['summary'], (ctx) => {
     let message = "`"
 
     const sales = Array.from(data.sales, day => day.sales);
-    const longestSales = Math.max(...sales.map(sale => sale.toFixed(2).length));
 
     let total = 0;
 
@@ -71,7 +72,11 @@ bot.command(['summary'], (ctx) => {
 
     message += "`";
 
-    ctx.reply(`${message}`, { parse_mode: 'Markdown' });
+    const messageParts = splitMessage(message)
+
+    for (const messagePart of messageParts) {
+        ctx.reply(message, { parse_mode: "Markdown" })
+    }
 });
 
 bot.command('payment', (ctx) => {
@@ -135,6 +140,7 @@ bot.command('edit', (ctx) => {
     });
 });
 
+
 bot.on("message", (ctx) => {
     if (ctx.chat?.id != parseInt(process.env.ME_ID!)) {
         ctx.reply('Но-но-но містер фіш, тобі сюда нізя!');
@@ -156,8 +162,8 @@ bot.on("message", (ctx) => {
 
         const payment = parseFloat(message);
 
-        if (isNaN(payment) || payment < 1) {
-            ctx.reply("Це не число або число менше 1");
+        if (isNaN(payment) || payment < 0) {
+            ctx.reply("🤡");
             return;
         }
 
@@ -179,8 +185,8 @@ bot.on("message", (ctx) => {
 
         const salesAmount = parseFloat(message);
 
-        if (isNaN(salesAmount) || salesAmount < 1) {
-            ctx.reply("Це не число або число менше 1");
+        if (isNaN(salesAmount) || salesAmount < 0) {
+            ctx.reply("🤡");
             return;
         }
 
@@ -203,14 +209,14 @@ bot.on("message", (ctx) => {
         const year = +message.split('/')[2];
 
         if (isNaN(day) || isNaN(month) || isNaN(year)) {
-            ctx.reply("Їблан, норм дату введи");
+            ctx.reply("Їблан, норм дату введи в форматі дд/мм/рррр");
             return;
         }
 
         const date = new Date(year, month - 1, day).toLocaleString('en-GB', { timeZone: 'Europe/Kiev' }).split(',')[0];
 
         if (date === 'Invalid Date') {
-            ctx.reply("Їблан, норм дату введи");
+            ctx.reply("Їблан, норм дату введи в форматі дд/мм/рррр");
             return;
         }
 
@@ -230,26 +236,9 @@ bot.on("message", (ctx) => {
     }
 });
 
-const job = new CronJob('0 23 * * *', () => {
-    bot.telegram.sendMessage(process.env.ME_ID!, 'Шо ти як? Де сьогодні був?', {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'Відпочивав', callback_data: 'DAY_OFF' }],
-                [{ text: 'Воробкевича', callback_data: 'VB' }],
-                [{ text: 'Проспект', callback_data: 'PR' }],
-                [{ text: 'Шептицького', callback_data: 'SH' }]
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: true
-        }
-    });
 
-    const kyivTime = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Kiev' });
-    waitingForMessage = `SALES@${kyivTime.split(',')[0]}`;
-    console.log(waitingForMessage);
-}, null, true, 'Europe/Kiev');
 
-bot.on('callback_query', (ctx) => {
+bot.on('callback_query', async (ctx) => {
     //@ts-ignore
     const callbackData = ctx.callbackQuery.data!;
     console.log(callbackData);
@@ -294,17 +283,9 @@ bot.on('callback_query', (ctx) => {
     bot.telegram.answerCbQuery(ctx.callbackQuery.id);
 });
 
-job.start();
-bot.launch();
 
-process.once('SIGINT', () => {
-    bot.stop('SIGINT');
-    job.stop();
-});
-process.once('SIGTERM', () => {
-    bot.stop('SIGTERM');
-    job.stop();
-});
+
+
 
 
 function readData() {
@@ -315,9 +296,15 @@ function updateData() {
     fs.writeFileSync('data.json', JSON.stringify(data, null, 4));
 }
 
-function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.CallbackQueryUpdate<CallbackQuery>>, callbackData: string) {
-    ctx.editMessageReplyMarkup(undefined);
-    switch (callbackData) {
+
+function sortData() {
+    data.sales = data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
+}
+
+
+
+async function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.CallbackQueryUpdate<CallbackQuery>>, callbackData: string) {
+    switch (callbackData.split(":")[0]) {
         case "EDIT_ADD_DAY":
             ctx.reply("Введіть дату", {
                 reply_markup: {
@@ -325,27 +312,45 @@ function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.Callbac
                 }
             });
             waitingForMessage = "ADD_DAY_DATE";
+            ctx.editMessageReplyMarkup(undefined);
             break;
 
 
-        case "EDIT_DELETE_DAY":
-            if (data.sales.length === 0) {
-                ctx.reply("Немає днів для видалення");
+        case "EDIT_DELETE_DAY": {
+            const parts = callbackData.split(":");
+            const page = parts[1];
+            const direction = parts[2];
+        
+            if (page !== undefined && direction !== undefined) {
+                const nextPage = +page + (direction === "next" ? -1 : 1);
+        
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: generateDataKeyboard(
+                        "{date}@{shortPlace}:{sales}",
+                        "DELETE_DAY:{index}",
+                        "EDIT_DELETE_DAY",
+                        nextPage
+                    ),
+                });
+                
+                return;
+            } else {
+                await ctx.reply("Виберіть день для видалення", {
+                    reply_markup: {
+                        inline_keyboard: generateDataKeyboard(
+                            "{date}@{shortPlace}:{sales}",
+                            "DELETE_DAY:{index}",
+                            "EDIT_DELETE_DAY",
+                            0
+                        ),
+                    },
+                });
+
+                ctx.answerCbQuery("Hui")
                 return;
             }
+        }
 
-            const keyboard = data.sales.map((sale, index) => {
-                return [{ text: `${sale.date} - ${sale.place}`, callback_data: `DELETE_DAY:${index}` }];
-            });
-
-            ctx.reply("Виберіть день для видалення", {
-                reply_markup: {
-                    inline_keyboard: keyboard,
-                    resize_keyboard: true,
-                    one_time_keyboard: true
-                }
-            });
-            break;
 
         case "EDIT_DELETE_PAYMENT":
             if (data.payments.length === 0) {
@@ -353,34 +358,35 @@ function handleEditCallback(ctx: NarrowedContext<Context<Update>, Update.Callbac
                 return;
             }
 
-            const keyboard2 = data.payments.map((payment, index) => {
+            const keyboard = data.payments.map((payment, index) => {
                 return [{ text: `${payment}`, callback_data: `DELETE_PAYMENT:${index}` }];
             });
 
             ctx.reply("Виберіть виплату для видалення", {
                 reply_markup: {
-                    inline_keyboard: keyboard2,
+                    inline_keyboard: keyboard,
                     resize_keyboard: true,
                     one_time_keyboard: true
                 }
             });
             break
 
+        
+
+        default:
+            ctx.reply(`Бля шось не то: ${callbackData}`)
     }
 
     ctx.answerCbQuery();
 }
 
-function sortData() {
-    data.sales = data.sales.sort((a, b) => (new Date(a.date).getTime()) - (new Date(b.date).getTime()));
-}
+
 
 function getInterval(from: Date, to?: Date) {
     if (!to) {
         to = new Date();
     }
-    
-    console.log("yay")
+
     return data.sales.filter(sale => {
         const date = parseDate(sale.date)
         return date.getTime() >= from.getTime() && date.getTime() <= to!.getTime();
@@ -395,8 +401,129 @@ function parseDate(str: string) {
     const year = parseInt(parts[2]);
 
     return new Date(year, month, day);
-} 
+}
 
-getInterval(parseDate("01/01/2025"), parseDate("01/02/2025")).forEach(sale => {
-    console.log(`${sale.date} ${sale.place.padEnd(15)} ${sale.sales}`);
-})
+
+function splitMessage(message: string): string[] {
+    if (message.length < MAX_MESSAGE_LENGHT)
+        return [message];
+
+    const lines = message.split("\n");
+
+    let partIndex = 0;
+
+    const parts = [""];
+
+    for (let line of lines) {
+        if (parts[partIndex].length + line.length + 1 > MAX_MESSAGE_LENGHT) {
+            partIndex++;
+            parts.push("");
+        }
+
+        parts[partIndex] += line + "\n";
+    }
+
+    for (let i in parts) {
+        parts[i] = parts[i].trim();
+    }
+
+
+    return parts;
+}
+
+
+/**
+ * {date} {place} {shortPlace} {sales} {index}
+ * @param textTemplate 
+ * @param callbackTemplate 
+ * @returns 
+ */
+function generateFullDataKeyboard(textTemplate: string, callbackTemplate: string) {
+    return data.sales.map((day, index) => {
+        let text = textTemplate
+            .replaceAll("{date}", day.date)
+            .replaceAll("{place}", day.place)
+            .replaceAll("{shortPlace}", placeShort[day.place])
+            .replaceAll("{sales}", `${day.sales}`)
+            .replaceAll("{index}", `${index}`);
+
+        let callback_data = callbackTemplate 
+            .replaceAll("{date}", day.date)
+            .replaceAll("{place}", day.place)
+            .replaceAll("{shortPlace}", placeShort[day.place])
+            .replaceAll("{sales}", `${day.sales}`)
+            .replaceAll("{index}", `${index}`);
+
+
+        return [{text, callback_data}]
+
+        
+    })
+}
+
+
+/**
+ *  * {date} {place} {shortPlace} {sales} {index}
+ * @param textTemplate 
+ * @param callbackItemTemplate 
+ * @param navigationCallback Callback on navigation buttons: `{navigationCallback}:{page}:next` | `{navigationCallback}:{page}:back`
+ * @param page 
+ * @returns 
+ */
+function generateDataKeyboard(textTemplate: string, callbackItemTemplate: string, navigationCallback: string, page: number) {
+    const sales = data.sales;
+
+    const offset = data.sales.length - page * 10 - 10
+
+    const keyboard = generateFullDataKeyboard(textTemplate, callbackItemTemplate)
+        .slice(offset < 0 ? 0 : offset, offset + 10)
+
+
+    const navigation = []
+
+    if (offset > 0) {
+        navigation.push({text: "Prev", callback_data: `${navigationCallback}:${page}:prev`})
+    }
+
+    if (offset < data.sales.length - 10) {
+        navigation.push({text: "Next", callback_data: `${navigationCallback}:${page}:next`})
+    } 
+
+    keyboard.push(navigation)
+
+
+    return keyboard;
+
+}
+
+const job = new CronJob('0 23 * * *', () => {
+    bot.telegram.sendMessage(process.env.ME_ID!, 'Шо ти як? Де сьогодні був?', {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Відпочивав', callback_data: 'DAY_OFF' }],
+                [{ text: 'Воробкевича', callback_data: 'VB' }],
+                [{ text: 'Проспект', callback_data: 'PR' }],
+                [{ text: 'Шептицького', callback_data: 'SH' }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    });
+
+    const kyivTime = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Kiev' });
+    waitingForMessage = `SALES@${kyivTime.split(',')[0]}`;
+    console.log(waitingForMessage);
+}, null, true, 'Europe/Kiev');
+
+job.start();
+bot.launch();
+
+process.once('SIGINT', () => {
+    bot.stop('SIGINT');
+    job.stop();
+});
+process.once('SIGTERM', () => {
+    bot.stop('SIGTERM');
+    job.stop();
+});
+
