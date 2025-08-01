@@ -6,7 +6,7 @@ import { CronJob } from 'cron';
 import type { Update, CallbackQuery } from 'telegraf/types';
 
 
-const MAX_MESSAGE_LENGHT = 4096;
+const MAX_MESSAGE_LENGHT = 4000;
 const placeShort = {
     "Воробкевича": "ВБ",
     "Проспект": "ПР",
