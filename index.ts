@@ -39,7 +39,7 @@ bot.command(['summary'], (ctx) => {
         return;
     }
 
-    let message = "`"
+    let message = ""
 
     const sales = Array.from(data.sales, day => day.sales);
 
@@ -70,9 +70,15 @@ bot.command(['summary'], (ctx) => {
     message += "-".repeat(longestRow) + "\n";
     message += `Борг: ${total.toFixed(2)}\n`;
 
-    message += "`";
+    message += "";
 
     const messageParts = splitMessage(message)
+
+
+    // #Markdown every message part
+    for (let i in messageParts) {
+        messageParts[i] = '`'  + messageParts[i] + '`'
+    } 
 
     for (const messagePart of messageParts) {
         ctx.reply(messagePart, { parse_mode: "Markdown" })
@@ -426,7 +432,6 @@ function splitMessage(message: string): string[] {
     for (let i in parts) {
         parts[i] = parts[i].trim();
     }
-
 
     return parts;
 }
