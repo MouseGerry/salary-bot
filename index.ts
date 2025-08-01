@@ -75,7 +75,7 @@ bot.command(['summary'], (ctx) => {
     const messageParts = splitMessage(message)
 
     for (const messagePart of messageParts) {
-        ctx.reply(message, { parse_mode: "Markdown" })
+        ctx.reply(messagePart, { parse_mode: "Markdown" })
     }
 });
 
